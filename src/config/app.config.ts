@@ -1,22 +1,29 @@
 import 'dotenv/config';
 
+const { env } = process;
+
 export default () => ({
   app: {
-    port: Number(process.env.PORT || 3000),
-    nodeEnv: process.env.NODE_ENV || 'development',
+    port: Number(env.PORT || 3000),
+    nodeEnv: env.NODE_ENV || 'development',
     Observe: {
-      appKey: process.env.OBSERVE_APPKEY,
-      appSecret: process.env.OBSERVE_APPSECRET,
+      appKey: env.OBSERVE_APPKEY,
+      appSecret: env.OBSERVE_APPSECRET,
     },
     // sentryDsn: process.env.SENTRY_DSN,
 
     // errorAlertsEnabled: process.env.ERROR_ALERTS_ENABLED,
   },
+  smsc: {
+    login: env.SMSC_LOGIN,
+    pwd: env.SMSC_PASSWORD,
+    apikey: env.SMSC_API_KEY,
+  },
   db: {
-    host: process.env.POSTGRES_HOST,
-    port: Number(process.env.POSTGRES_PORT || 5432),
-    username: process.env.POSTGRES_USER,
-    password: process.env.POSTGRES_PASSWORD,
-    database: process.env.POSTGRES_DB,
+    host: env.POSTGRES_HOST,
+    port: Number(env.POSTGRES_PORT || 5432),
+    username: env.POSTGRES_USER,
+    password: env.POSTGRES_PASSWORD,
+    database: env.POSTGRES_DB,
   },
 });
