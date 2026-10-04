@@ -1,12 +1,16 @@
 import { Module } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { createObserveModule } from '@nestjs/observe';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
+import { AuthModule } from '@/auth/auth.module.js';
+import { AppExceptionFilter } from '@/filters/app-exception.filter.js';
+import { UsersModule } from '@/users/users.module.js';
+
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import appConfig from './config/app.config.js';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { dataSourceOptions } from './database/ormconfig.js';
-import { UsersModule } from '@/users/users.module.js';
-import { AuthModule } from '@/auth/auth.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -27,6 +31,12 @@ const {
     AuthModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    {
+      provide: APP_FILTER,
+      useClass: AppExceptionFilter,
+    },
+    AppService,
+  ],
 })
 export class AppModule {}

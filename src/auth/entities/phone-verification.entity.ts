@@ -22,4 +22,7 @@ export class PhoneVerification {
 
   @Column({ type: 'timestamp with time zone' })
   expiresAt!: Date;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  consumedAt!: Date | null;
 }

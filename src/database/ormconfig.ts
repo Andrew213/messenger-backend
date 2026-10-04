@@ -1,6 +1,7 @@
-import { DataSource } from 'typeorm';
-import type { DataSourceOptions } from 'typeorm';
 import * as path from 'path';
+import type { DataSourceOptions } from 'typeorm';
+import { DataSource } from 'typeorm';
+
 import appConfig from '../config/app.config.js';
 
 const { db } = appConfig();

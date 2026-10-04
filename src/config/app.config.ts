@@ -14,10 +14,9 @@ export default () => ({
 
     // errorAlertsEnabled: process.env.ERROR_ALERTS_ENABLED,
   },
-  smsc: {
-    login: env.SMSC_LOGIN,
-    pwd: env.SMSC_PASSWORD,
-    apikey: env.SMSC_API_KEY,
+  smsru: {
+    apikey: env.SMSRU_API_KEY,
+    otpSecret: env.OTP_SECRET || '',
   },
   db: {
     host: env.POSTGRES_HOST,
