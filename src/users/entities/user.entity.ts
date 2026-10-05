@@ -1,4 +1,5 @@
 import {
+  Column,
   CreateDateColumn,
   Entity,
   PrimaryGeneratedColumn,
@@ -14,4 +15,13 @@ export class User {
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamp with time zone' })
   updatedAt!: Date;
+
+  @Column({ type: 'text' })
+  name!: string | null;
+
+  @Column({ type: 'text' })
+  lastname!: string | null;
+
+  @Column({ name: 'phone_number', type: 'text' })
+  phoneNumber!: string;
 }

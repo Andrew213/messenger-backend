@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { DeepPartial, Repository } from 'typeorm';
 
 import { SubmitCallResponseDto } from '@/auth/dto/submit-call.dto.js';
+import {
+  SubmitCodeDto,
+  SubmitCodeResponseDto,
+} from '@/auth/dto/submit-code.dto.js';
 import { PhoneVerification } from '@/auth/entities/phone-verification.entity.js';
 import {
   AUTH_ERROR_DEFINITIONS,
@@ -111,5 +115,100 @@ export class AuthService {
     const code = ErrorCode.ServiceUnavailable;
     const status = ERROR_DEFINITIONS[code];
     throw new AppException(code, status);
+  }
+
+  async sendCode(
+    dto: SubmitCodeDto,
+  ): Promise<AppSuccessResponse<SubmitCodeResponseDto>> {
+    const { code, phoneNumber } = dto;
+    const numberExist = await this.PhoneVerificationRepository.findOne({
+      where: { phoneNumber },
+      select: {
+        otpHash: true,
+        failedAttempts: true,
+        resendAvailableAt: true,
+        expiresAt: true,
+        consumedAt: true,
+        blockedUntil: true,
+      },
+    });
+
+    const receiveHmac = createHmac('sha256', smsru.otpSecret)
+      .update(`${phoneNumber}:${code}`)
+      .digest('hex');
+
+    if (numberExist) {
+      const now = Date.now();
+      if (
+        numberExist.blockedUntil &&
+        numberExist.blockedUntil?.getTime() > now
+      ) {
+        throw new AppException(
+          AuthErrorCode.OtpBlockUntill,
+          AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpBlockUntill],
+          { blockedUntil: numberExist.blockedUntil.getTime() },
+        );
+      }
+      if (numberExist.consumedAt !== null) {
+        throw new AppException(
+          AuthErrorCode.OtpExecuted,
+          AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpExecuted],
+        );
+      }
+
+      if (numberExist.expiresAt.getTime() <= now) {
+        throw new AppException(
+          AuthErrorCode.OtpExpired,
+          AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpExpired],
+        );
+      }
+
+      const expectedBuffer = Buffer.from(numberExist.otpHash, 'hex');
+      const receivedBuffer = Buffer.from(receiveHmac, 'hex');
+      const currentFailAttemps = numberExist.failedAttempts;
+
+      if (currentFailAttemps >= 3) {
+        throw new AppException(
+          AuthErrorCode.OtpMaxFailedAttempt,
+          AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpMaxFailedAttempt],
+        );
+      }
+
+      if (
+        expectedBuffer.length !== receivedBuffer.length ||
+        !timingSafeEqual(expectedBuffer, receivedBuffer)
+      ) {
+        const nextAttemp = currentFailAttemps + 1;
+        if (nextAttemp >= 3) {
+          await this.PhoneVerificationRepository.update(
+            { phoneNumber },
+            {
+              failedAttempts: nextAttemp,
+              blockedUntil: new Date(now + 60 * 1000),
+            },
+          );
+          throw new AppException(
+            AuthErrorCode.OtpMaxFailedAttempt,
+            AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpMaxFailedAttempt],
+          );
+        }
+        await this.PhoneVerificationRepository.update(
+          { phoneNumber },
+          { failedAttempts: nextAttemp },
+        );
+        throw new AppException(
+          AuthErrorCode.OtpInvalid,
+          AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpInvalid],
+        );
+      } else {
+        // ТУТ ОСТАНОВИЛСЯ. ОБРАБОТАТЬ УСПЕШНЫЙ ЛОГИН
+        return { success: true, data: {} };
+      }
+    }
+
+    throw new AppException(
+      AuthErrorCode.PhoneNotFound,
+      AUTH_ERROR_DEFINITIONS[AuthErrorCode.PhoneNotFound],
+    );
   }
 }
