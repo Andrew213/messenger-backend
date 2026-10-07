@@ -2,9 +2,12 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+
+import { Session } from '../../sessions/entities/session.entity.js';
 
 @Entity({ name: 'users', schema: 'public' })
 export class User {
@@ -24,4 +27,7 @@ export class User {
 
   @Column({ name: 'phone_number', type: 'text' })
   phoneNumber!: string;
+
+  @OneToMany(() => Session, (s) => s.user)
+  sessions!: Session[];
 }

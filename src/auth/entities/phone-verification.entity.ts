@@ -16,7 +16,7 @@ export class PhoneVerification {
   blockedUntil!: Date | null; // блок после 3-х неправильных вводов
 
   @Column({
-    name: 'failed_attemps',
+    name: 'failed_attempts',
     type: 'int',
     default: 0,
   })

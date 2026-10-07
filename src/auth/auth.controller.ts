@@ -2,7 +2,7 @@ import { Body, Controller, Logger, Post } from '@nestjs/common';
 
 import { AuthService } from '@/auth/auth.service.js';
 import { SubmitCallResponseDto } from '@/auth/dto/submit-call.dto.js';
-import { SubmitCodeDto } from '@/auth/dto/submit-code.dto.js';
+// import { SubmitCodeDto } from '@/auth/dto/submit-code.dto.js';
 import { PhoneNumberPipe } from '@/auth/pipes/phone-number.pipe.js';
 import { AppSuccessResponse } from '@/types/app-response.types.js';
 
@@ -20,9 +20,9 @@ export class AuthController {
     return this.AuthService.sendCall(dto);
   }
 
-  @Post('/code')
-  submitCode(
-    @Body() dto: SubmitCodeDto,
-    @Body('phoneNumber', PhoneNumberPipe) phoneNumber: string,
-  ) {}
+  // @Post('/code')
+  // submitCode(
+  //   @Body() dto: SubmitCodeDto,
+  //   @Body('phoneNumber', PhoneNumberPipe) phoneNumber: string,
+  // ) {}
 }

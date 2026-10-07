@@ -202,7 +202,6 @@ export class AuthService {
         );
       } else {
         // ТУТ ОСТАНОВИЛСЯ. ОБРАБОТАТЬ УСПЕШНЫЙ ЛОГИН
-        return { success: true, data: {} };
       }
     }
 
