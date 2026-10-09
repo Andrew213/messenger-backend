@@ -19,4 +19,6 @@ export class UsersService {
       id: user?.id,
     };
   }
+
+  // async createUser(phoneNumber: string) {}
 }

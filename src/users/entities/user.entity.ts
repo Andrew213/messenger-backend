@@ -19,10 +19,10 @@ export class User {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamp with time zone' })
   updatedAt!: Date;
 
-  @Column({ type: 'text' })
+  @Column({ type: 'text', nullable: true })
   name!: string | null;
 
-  @Column({ type: 'text' })
+  @Column({ type: 'text', nullable: true })
   lastname!: string | null;
 
   @Column({ name: 'phone_number', type: 'text' })

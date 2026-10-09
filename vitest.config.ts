@@ -1,5 +1,5 @@
-import { defineConfig } from 'vitest/config';
 import tsconfigPaths from 'vite-tsconfig-paths';
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   // Resolves the path aliases declared in tsconfig.json, including the ones
@@ -9,5 +9,7 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.spec.ts'],
+    environment: 'node',
+    setupFiles: ['./test/setup.ts'],
   },
 });
