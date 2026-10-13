@@ -13,7 +13,7 @@ export class SessionService {
   ) {}
   async createSession(
     userId: string,
-  ): Promise<{ token: string; expiresAt: Date }> {
+  ): Promise<{ token: string; expiresAt: Date; id: string }> {
     const sessionToken = randomBytes(32).toString('base64');
     const tokenHash = createHash('sha256').update(sessionToken).digest('hex');
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -26,8 +26,8 @@ export class SessionService {
       tokenHash,
     };
 
-    await this.SessionRepository.save(newSession);
+    const session = await this.SessionRepository.save(newSession);
 
-    return { expiresAt, token: sessionToken };
+    return { expiresAt, token: sessionToken, id: session.id };
   }
 }

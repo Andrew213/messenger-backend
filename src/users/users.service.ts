@@ -20,5 +20,11 @@ export class UsersService {
     };
   }
 
-  // async createUser(phoneNumber: string) {}
+  async createUser(phoneNumber: string) {
+    const newUser = this.usersRepository.create({ phoneNumber });
+
+    const savedUser = await this.usersRepository.save(newUser);
+
+    return savedUser.id;
+  }
 }

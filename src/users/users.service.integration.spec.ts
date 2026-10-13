@@ -1,22 +1,25 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DeepPartial, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 
 import { dataSourceOptions } from '@/database/ormconfig.js';
 import { User } from '@/users/entities/user.entity.js';
 import { UsersModule } from '@/users/users.module.js';
+import { UsersService } from '@/users/users.service.js';
 
 import { TestDB } from '../../test/config/typeorm-test.config.js';
 
-describe('UserService integraion with PostgreSQL', () => {
+describe('UserService integraion', () => {
   let repository: Repository<User>;
   let moduleRef: TestingModule;
+  let service: UsersService;
 
   beforeAll(async () => {
     moduleRef = await Test.createTestingModule({
       imports: [TestDB, UsersModule],
     }).compile();
     repository = moduleRef.get<Repository<User>>(getRepositoryToken(User));
+    service = moduleRef.get<UsersService>(UsersService);
   });
 
   it('should connect test db with test user', () => {
@@ -25,17 +28,17 @@ describe('UserService integraion with PostgreSQL', () => {
   });
 
   it('should create user', async () => {
-    const testUser: DeepPartial<User> = {
+    const testUser = {
       phoneNumber: '890000000000',
     };
-    const newUser = repository.create(testUser);
+
     let userId: string | undefined;
 
     try {
-      const savedUser = await repository.save(newUser);
-      userId = savedUser.id;
+      const userID = await service.createUser(testUser.phoneNumber);
+      userId = userID;
       const user = await repository.findOneByOrFail({
-        id: userId,
+        id: userID,
       });
 
       expect(user).toEqual(expect.objectContaining({ id: expect.any(String) }));

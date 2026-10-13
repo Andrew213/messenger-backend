@@ -5,10 +5,12 @@ import { createHash } from 'crypto';
 import { Session } from '@/sessions/entities/session.entity.js';
 import { SessionService } from '@/sessions/session.service.js';
 
-describe('SessionService', () => {
+describe('SessionService unit', () => {
   let service: SessionService;
 
-  const mockServiceRepository = { save: vi.fn() };
+  const mockServiceRepository = {
+    save: vi.fn().mockResolvedValue({ id: 'test-session-id' }),
+  };
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -24,8 +26,7 @@ describe('SessionService', () => {
 
     service = module.get<SessionService>(SessionService);
   });
-
-  it('возвращает токен и срок действия новой сессии', async () => {
+  it('should return token and experiesAt of new session', async () => {
     const userId = '11111111-1111-4111-8111-111111111111';
     const beforeCall = Date.now();
 
