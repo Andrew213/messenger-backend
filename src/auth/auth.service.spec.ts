@@ -43,177 +43,181 @@ describe('AuthService unit tests', () => {
     service = module.get<AuthService>(AuthService);
   });
 
-  it('should reject expired OTP', async () => {
-    mockPhoneVerificationRepository.findOne.mockResolvedValue({
-      otpHash: '1111',
-      failedAttempts: 0,
-      resendAvailableAt: null,
-      expiresAt: new Date(Date.now() - 3 * 60 * 1000),
-      consumedAt: null,
-      blockedUntil: null,
+  describe('sendCode()', () => {
+    it('should reject expired OTP', async () => {
+      mockPhoneVerificationRepository.findOne.mockResolvedValue({
+        otpHash: '1111',
+        failedAttempts: 0,
+        resendAvailableAt: null,
+        expiresAt: new Date(Date.now() - 3 * 60 * 1000),
+        consumedAt: null,
+        blockedUntil: null,
+      });
+
+      const promise = service.sendCode(mockedData);
+
+      await expect(promise).rejects.toBeInstanceOf(AppException);
+
+      await expect(promise).rejects.toMatchObject({
+        code: AuthErrorCode.OtpExpired,
+        message: AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpExpired].message,
+      });
     });
 
-    const promise = service.sendCode(mockedData);
+    it('should reject if blockedUntil available', async () => {
+      const mockedVerification = {
+        otpHash: '1111',
+        failedAttempts: 0,
+        resendAvailableAt: null,
+        expiresAt: new Date(Date.now() + 2 * 60 * 1000),
+        consumedAt: null,
+        blockedUntil: new Date(Date.now() + 2 * 60 * 1000),
+      };
+      mockPhoneVerificationRepository.findOne.mockResolvedValue(
+        mockedVerification,
+      );
 
-    await expect(promise).rejects.toBeInstanceOf(AppException);
+      const promise = service.sendCode(mockedData);
 
-    await expect(promise).rejects.toMatchObject({
-      code: AuthErrorCode.OtpExpired,
-      message: AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpExpired].message,
-    });
-  });
+      await expect(promise).rejects.toBeInstanceOf(AppException);
 
-  it('should reject if blockedUntil available', async () => {
-    const mockedVerification = {
-      otpHash: '1111',
-      failedAttempts: 0,
-      resendAvailableAt: null,
-      expiresAt: new Date(Date.now() + 2 * 60 * 1000),
-      consumedAt: null,
-      blockedUntil: new Date(Date.now() + 2 * 60 * 1000),
-    };
-    mockPhoneVerificationRepository.findOne.mockResolvedValue(
-      mockedVerification,
-    );
-
-    const promise = service.sendCode(mockedData);
-
-    await expect(promise).rejects.toBeInstanceOf(AppException);
-
-    await expect(promise).rejects.toMatchObject({
-      code: AuthErrorCode.OtpBlockUntill,
-      message: AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpBlockUntill].message,
-      details: { blockedUntil: mockedVerification.blockedUntil.getTime() },
-    });
-  });
-
-  it('should reject when enter incorrect OTP', async () => {
-    const receiveHmac = createHmac('sha256', smsru.otpSecret)
-      .update(`${mockedData.phoneNumber}:2222`)
-      .digest('hex');
-    const mockedVerification = {
-      otpHash: receiveHmac,
-      failedAttempts: 0,
-      resendAvailableAt: null,
-      expiresAt: new Date(Date.now() + 2 * 60 * 1000),
-      consumedAt: null,
-      blockedUntil: null,
-    };
-
-    mockPhoneVerificationRepository.findOne.mockResolvedValue(
-      mockedVerification,
-    );
-
-    const promise = service.sendCode(mockedData);
-
-    await expect(promise).rejects.toBeInstanceOf(AppException);
-    await expect(promise).rejects.toMatchObject({
-      code: AuthErrorCode.OtpInvalid,
-      message: AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpInvalid].message,
+      await expect(promise).rejects.toMatchObject({
+        code: AuthErrorCode.OtpBlockUntill,
+        message: AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpBlockUntill].message,
+        details: { blockedUntil: mockedVerification.blockedUntil.getTime() },
+      });
     });
 
-    expect(
-      mockPhoneVerificationRepository.update,
-    ).toHaveBeenCalledExactlyOnceWith(
-      { phoneNumber: mockedData.phoneNumber },
-      { failedAttempts: 1 },
-    );
-  });
+    it('should reject when enter incorrect OTP', async () => {
+      const receiveHmac = createHmac('sha256', smsru.otpSecret)
+        .update(`${mockedData.phoneNumber}:2222`)
+        .digest('hex');
+      const mockedVerification = {
+        otpHash: receiveHmac,
+        failedAttempts: 0,
+        resendAvailableAt: null,
+        expiresAt: new Date(Date.now() + 2 * 60 * 1000),
+        consumedAt: null,
+        blockedUntil: null,
+      };
 
-  it('should count correctly failed attempts', async () => {
-    const storedOtpHash = createHmac('sha256', smsru.otpSecret)
-      .update(`${mockedData.phoneNumber}:2222`)
-      .digest('hex');
-    const mockedVerification = {
-      otpHash: storedOtpHash,
-      failedAttempts: 2,
-      resendAvailableAt: null,
-      expiresAt: new Date(Date.now() + 2 * 60 * 1000),
-      consumedAt: null,
-      blockedUntil: null,
-    };
+      mockPhoneVerificationRepository.findOne.mockResolvedValue(
+        mockedVerification,
+      );
 
-    mockPhoneVerificationRepository.findOne.mockResolvedValue(
-      mockedVerification,
-    );
+      const promise = service.sendCode(mockedData);
 
-    const promise = service.sendCode(mockedData);
+      await expect(promise).rejects.toBeInstanceOf(AppException);
+      await expect(promise).rejects.toMatchObject({
+        code: AuthErrorCode.OtpInvalid,
+        message: AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpInvalid].message,
+      });
 
-    await expect(promise).rejects.toMatchObject({
-      code: AuthErrorCode.OtpMaxFailedAttempt,
-      message:
-        AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpMaxFailedAttempt].message,
+      expect(
+        mockPhoneVerificationRepository.update,
+      ).toHaveBeenCalledExactlyOnceWith(
+        { phoneNumber: mockedData.phoneNumber },
+        { failedAttempts: 1 },
+      );
     });
 
-    expect(mockPhoneVerificationRepository.update).toHaveBeenCalledWith(
-      { phoneNumber: mockedData.phoneNumber },
-      {
+    it('should count correctly failed attempts', async () => {
+      const storedOtpHash = createHmac('sha256', smsru.otpSecret)
+        .update(`${mockedData.phoneNumber}:2222`)
+        .digest('hex');
+      const mockedVerification = {
+        otpHash: storedOtpHash,
+        failedAttempts: 2,
+        resendAvailableAt: null,
+        expiresAt: new Date(Date.now() + 2 * 60 * 1000),
+        consumedAt: null,
+        blockedUntil: null,
+      };
+
+      mockPhoneVerificationRepository.findOne.mockResolvedValue(
+        mockedVerification,
+      );
+
+      const promise = service.sendCode(mockedData);
+
+      await expect(promise).rejects.toMatchObject({
+        code: AuthErrorCode.OtpMaxFailedAttempt,
+        message:
+          AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpMaxFailedAttempt].message,
+      });
+
+      expect(mockPhoneVerificationRepository.update).toHaveBeenCalledWith(
+        { phoneNumber: mockedData.phoneNumber },
+        {
+          failedAttempts: 3,
+          blockedUntil: expect.any(Date),
+        },
+      );
+    });
+
+    it('should count correctly failed attempts = 3', async () => {
+      const storedOtpHash = createHmac('sha256', smsru.otpSecret)
+        .update(`${mockedData.phoneNumber}:2222`)
+        .digest('hex');
+      const mockedVerification = {
+        otpHash: storedOtpHash,
         failedAttempts: 3,
-        blockedUntil: expect.any(Date),
-      },
-    );
-  });
+        resendAvailableAt: null,
+        expiresAt: new Date(Date.now() + 2 * 60 * 1000),
+        consumedAt: null,
+        blockedUntil: null,
+      };
 
-  it('should count correctly failed attempts = 3', async () => {
-    const storedOtpHash = createHmac('sha256', smsru.otpSecret)
-      .update(`${mockedData.phoneNumber}:2222`)
-      .digest('hex');
-    const mockedVerification = {
-      otpHash: storedOtpHash,
-      failedAttempts: 3,
-      resendAvailableAt: null,
-      expiresAt: new Date(Date.now() + 2 * 60 * 1000),
-      consumedAt: null,
-      blockedUntil: null,
-    };
+      mockPhoneVerificationRepository.findOne.mockResolvedValue(
+        mockedVerification,
+      );
 
-    mockPhoneVerificationRepository.findOne.mockResolvedValue(
-      mockedVerification,
-    );
+      const promise = service.sendCode(mockedData);
 
-    const promise = service.sendCode(mockedData);
+      await expect(promise).rejects.toMatchObject({
+        code: AuthErrorCode.OtpMaxFailedAttempt,
+        message:
+          AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpMaxFailedAttempt].message,
+      });
 
-    await expect(promise).rejects.toMatchObject({
-      code: AuthErrorCode.OtpMaxFailedAttempt,
-      message:
-        AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpMaxFailedAttempt].message,
+      expect(mockPhoneVerificationRepository.update).not.toHaveBeenCalled();
     });
 
-    expect(mockPhoneVerificationRepository.update).not.toHaveBeenCalled();
-  });
+    it('should reject if consumedAt not null', async () => {
+      const storedOtpHash = createHmac('sha256', smsru.otpSecret)
+        .update(`${mockedData.phoneNumber}:2222`)
+        .digest('hex');
+      const mockedVerification = {
+        otpHash: storedOtpHash,
+        failedAttempts: 0,
+        resendAvailableAt: null,
+        expiresAt: new Date(Date.now() + 60 * 1000),
+        consumedAt: new Date(Date.now() - 60 * 1000),
+        blockedUntil: null,
+      };
 
-  it('should reject if consumedAt not null', async () => {
-    const storedOtpHash = createHmac('sha256', smsru.otpSecret)
-      .update(`${mockedData.phoneNumber}:2222`)
-      .digest('hex');
-    const mockedVerification = {
-      otpHash: storedOtpHash,
-      failedAttempts: 0,
-      resendAvailableAt: null,
-      expiresAt: new Date(Date.now() + 60 * 1000),
-      consumedAt: new Date(Date.now() - 60 * 1000),
-      blockedUntil: null,
-    };
+      mockPhoneVerificationRepository.findOne.mockResolvedValue(
+        mockedVerification,
+      );
 
-    mockPhoneVerificationRepository.findOne.mockResolvedValue(
-      mockedVerification,
-    );
+      await expect(service.sendCode(mockedData)).rejects.toMatchObject({
+        code: AuthErrorCode.OtpExecuted,
+        message: AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpExecuted].message,
+      });
 
-    await expect(service.sendCode(mockedData)).rejects.toMatchObject({
-      code: AuthErrorCode.OtpExecuted,
-      message: AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpExecuted].message,
+      expect(mockPhoneVerificationRepository.update).not.toHaveBeenCalled();
     });
 
-    expect(mockPhoneVerificationRepository.update).not.toHaveBeenCalled();
-  });
+    it('should reject if phone number not found', async () => {
+      mockPhoneVerificationRepository.findOne.mockResolvedValue(null);
 
-  it('should reject if phone number not found', async () => {
-    mockPhoneVerificationRepository.findOne.mockResolvedValue(null);
-
-    await expect(service.sendCode(mockedData)).rejects.toMatchObject({
-      code: AuthErrorCode.PhoneNotFound,
-      message: AUTH_ERROR_DEFINITIONS[AuthErrorCode.PhoneNotFound].message,
+      await expect(service.sendCode(mockedData)).rejects.toMatchObject({
+        code: AuthErrorCode.PhoneNotFound,
+        message: AUTH_ERROR_DEFINITIONS[AuthErrorCode.PhoneNotFound].message,
+      });
+      expect(mockPhoneVerificationRepository.update).not.toHaveBeenCalled();
     });
-    expect(mockPhoneVerificationRepository.update).not.toHaveBeenCalled();
   });
+
+  describe.todo('sendCall()');
 });
