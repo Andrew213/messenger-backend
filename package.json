@@ -18,7 +18,7 @@
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "mig:create": "npm run typeorm -- migration:create src/database/migrations/init",
     "mig:gen": "npm run typeorm -- migration:generate -d src/database/ormconfig.ts src/database/migrations/init",
-    "mig:test:up": "dotenv -e .env.test.local -o -- npm run typeorm -- migration:run -d src/database/ormconfig.ts",
+    "mig:test:up": "dotenv run -f .env.test.local --override -- npm run typeorm -- migration:run -d src/database/ormconfig.ts",
     "mig:up": "npm run typeorm -- migration:run -d src/database/ormconfig.ts",
     "mig:down": "npm run typeorm -- migration:revert -d src/database/ormconfig.ts",
     "test": "vitest run",

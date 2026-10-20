@@ -25,7 +25,7 @@ export class User {
   @Column({ type: 'text', nullable: true })
   lastname!: string | null;
 
-  @Column({ name: 'phone_number', type: 'text' })
+  @Column({ name: 'phone_number', type: 'text', unique: true })
   phoneNumber!: string;
 
   @OneToMany(() => Session, (s) => s.user)
