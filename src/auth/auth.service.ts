@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { DeepPartial, Repository } from 'typeorm';
+import { DataSource } from 'typeorm/browser';
 
 import { SubmitCallResponseDto } from '@/auth/dto/submit-call.dto.js';
 import {
@@ -20,7 +21,9 @@ import {
   ErrorCode,
 } from '@/common/exceptions/error-codes.js';
 import appConfig from '@/config/app.config.js';
+import { SessionService } from '@/sessions/session.service.js';
 import { AppSuccessResponse } from '@/types/app-response.types.js';
+import { UsersService } from '@/users/users.service.js';
 
 const { smsru } = appConfig();
 
@@ -28,7 +31,10 @@ const { smsru } = appConfig();
 export class AuthService {
   constructor(
     @InjectRepository(PhoneVerification)
-    private PhoneVerificationRepository: Repository<PhoneVerification>,
+    private readonly dataSource: DataSource,
+    private readonly PhoneVerificationRepository: Repository<PhoneVerification>,
+    private readonly userService: UsersService,
+    private readonly sessionService: SessionService,
   ) {}
 
   async sendCall(
@@ -121,93 +127,142 @@ export class AuthService {
     dto: SubmitCodeDto,
   ): Promise<AppSuccessResponse<SubmitCodeResponseDto>> {
     const { code, phoneNumber } = dto;
-    const numberExist = await this.PhoneVerificationRepository.findOne({
-      where: { phoneNumber },
-      select: {
-        otpHash: true,
-        failedAttempts: true,
-        resendAvailableAt: true,
-        expiresAt: true,
-        consumedAt: true,
-        blockedUntil: true,
-      },
-    });
 
-    const receiveHmac = createHmac('sha256', smsru.otpSecret)
-      .update(`${phoneNumber}:${code}`)
-      .digest('hex');
+    const transaction = await this.dataSource.transaction(async (manager) => {
+      const numberExist = await manager.findOne(PhoneVerification, {
+        where: { phoneNumber },
+        lock: { mode: 'pessimistic_write' },
+        select: {
+          id: true,
+          otpHash: true,
+          failedAttempts: true,
+          resendAvailableAt: true,
+          expiresAt: true,
+          consumedAt: true,
+          blockedUntil: true,
+        },
+      });
 
-    if (numberExist) {
-      const now = Date.now();
-      if (
-        numberExist.blockedUntil &&
-        numberExist.blockedUntil?.getTime() > now
-      ) {
-        throw new AppException(
-          AuthErrorCode.OtpBlockUntill,
-          AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpBlockUntill],
-          { blockedUntil: numberExist.blockedUntil.getTime() },
-        );
-      }
-      if (numberExist.consumedAt !== null) {
-        throw new AppException(
-          AuthErrorCode.OtpExecuted,
-          AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpExecuted],
-        );
-      }
+      const receiveHmac = createHmac('sha256', smsru.otpSecret)
+        .update(`${phoneNumber}:${code}`)
+        .digest('hex');
 
-      if (numberExist.expiresAt.getTime() <= now) {
-        throw new AppException(
-          AuthErrorCode.OtpExpired,
-          AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpExpired],
-        );
-      }
+      if (numberExist) {
+        const now = Date.now();
+        const currentFailAttemps = numberExist.failedAttempts;
 
-      const expectedBuffer = Buffer.from(numberExist.otpHash, 'hex');
-      const receivedBuffer = Buffer.from(receiveHmac, 'hex');
-      const currentFailAttemps = numberExist.failedAttempts;
-
-      if (currentFailAttemps >= 3) {
-        throw new AppException(
-          AuthErrorCode.OtpMaxFailedAttempt,
-          AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpMaxFailedAttempt],
-        );
-      }
-
-      if (
-        expectedBuffer.length !== receivedBuffer.length ||
-        !timingSafeEqual(expectedBuffer, receivedBuffer)
-      ) {
-        const nextAttemp = currentFailAttemps + 1;
-        if (nextAttemp >= 3) {
-          await this.PhoneVerificationRepository.update(
-            { phoneNumber },
-            {
-              failedAttempts: nextAttemp,
-              blockedUntil: new Date(now + 60 * 1000),
-            },
+        if (numberExist.consumedAt !== null) {
+          throw new AppException(
+            AuthErrorCode.OtpExecuted,
+            AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpExecuted],
           );
+        }
+
+        if (
+          numberExist.blockedUntil &&
+          numberExist.blockedUntil?.getTime() > now
+        ) {
+          throw new AppException(
+            AuthErrorCode.OtpBlockUntill,
+            AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpBlockUntill],
+            { blockedUntil: numberExist.blockedUntil.getTime() },
+          );
+        }
+
+        if (numberExist.expiresAt.getTime() <= now) {
+          throw new AppException(
+            AuthErrorCode.OtpExpired,
+            AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpExpired],
+          );
+        }
+
+        if (currentFailAttemps >= 3) {
           throw new AppException(
             AuthErrorCode.OtpMaxFailedAttempt,
             AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpMaxFailedAttempt],
           );
         }
-        await this.PhoneVerificationRepository.update(
-          { phoneNumber },
-          { failedAttempts: nextAttemp },
-        );
-        throw new AppException(
-          AuthErrorCode.OtpInvalid,
-          AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpInvalid],
-        );
-      } else {
-        // ТУТ ОСТАНОВИЛСЯ. ОБРАБОТАТЬ УСПЕШНЫЙ ЛОГИН
-      }
-    }
 
-    throw new AppException(
-      AuthErrorCode.PhoneNotFound,
-      AUTH_ERROR_DEFINITIONS[AuthErrorCode.PhoneNotFound],
-    );
+        const expectedBuffer = Buffer.from(numberExist.otpHash, 'hex');
+        const receivedBuffer = Buffer.from(receiveHmac, 'hex');
+
+        if (
+          expectedBuffer.length !== receivedBuffer.length ||
+          !timingSafeEqual(expectedBuffer, receivedBuffer)
+        ) {
+          const nextAttemp = currentFailAttemps + 1;
+          if (nextAttemp >= 3) {
+            await manager.update(
+              PhoneVerification,
+              { phoneNumber },
+              {
+                failedAttempts: nextAttemp,
+                blockedUntil: new Date(now + 60 * 1000),
+              },
+            );
+            return {
+              error: new AppException(
+                AuthErrorCode.OtpMaxFailedAttempt,
+                AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpMaxFailedAttempt],
+              ),
+            };
+          }
+          await manager.update(
+            PhoneVerification,
+            { phoneNumber },
+            { failedAttempts: nextAttemp },
+          );
+          return {
+            error: new AppException(
+              AuthErrorCode.OtpInvalid,
+              AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpInvalid],
+            ),
+          };
+        } else {
+          let userId: string;
+          const user = await this.userService.findByPhoneNumer(
+            phoneNumber,
+            manager,
+          );
+          if (user) {
+            userId = user;
+          } else {
+            const newUser = await this.userService.createUser(
+              phoneNumber,
+              manager,
+            );
+            userId = newUser;
+          }
+          const newSession = await this.sessionService.createSession(
+            userId,
+            manager,
+          );
+
+          await manager.update(PhoneVerification, numberExist.id, {
+            consumedAt: new Date(),
+          });
+
+          return {
+            success: true as const,
+            data: {
+              expiresAt: newSession.expiresAt,
+              token: newSession.token,
+              user: {
+                id: userId,
+              },
+            },
+          };
+        }
+      }
+      throw new AppException(
+        AuthErrorCode.PhoneNotFound,
+        AUTH_ERROR_DEFINITIONS[AuthErrorCode.PhoneNotFound],
+      );
+    });
+
+    if (transaction.error) {
+      throw transaction.error;
+    }
+    return transaction;
   }
 }

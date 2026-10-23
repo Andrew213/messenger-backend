@@ -17,4 +17,6 @@ export class SubmitCodeResponseDto {
   user!: {
     id: string;
   };
+  expiresAt!: Date;
+  token!: string;
 }
