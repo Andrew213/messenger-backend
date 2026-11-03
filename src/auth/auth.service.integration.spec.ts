@@ -16,6 +16,10 @@ import {
   ErrorCode,
 } from '@/common/exceptions/error-codes.js';
 import appConfig from '@/config/app.config.js';
+import { Session } from '@/sessions/entities/session.entity.js';
+import { SessionModule } from '@/sessions/session.module.js';
+import { User } from '@/users/entities/user.entity.js';
+import { UsersModule } from '@/users/users.module.js';
 
 import { TestDB } from '../../test/config/typeorm-test.config.js';
 
@@ -23,7 +27,9 @@ const { smsru } = appConfig();
 
 describe('authService testing', () => {
   let moduleRef: TestingModule;
-  let repository: Repository<PhoneVerification>;
+  let repositoryPhoneVerification: Repository<PhoneVerification>;
+  let repositoryUser: Repository<User>;
+  let sessionRepository: Repository<Session>;
   let service: AuthService;
   const fakeFetch = vi.fn();
 
@@ -35,15 +41,23 @@ describe('authService testing', () => {
 
   beforeAll(async () => {
     moduleRef = await Test.createTestingModule({
-      imports: [TestDB, AuthModule],
+      imports: [TestDB, AuthModule, UsersModule, SessionModule],
     }).compile();
+
     service = moduleRef.get<AuthService>(AuthService);
-    repository = moduleRef.get(getRepositoryToken(PhoneVerification));
+
+    repositoryPhoneVerification = moduleRef.get(
+      getRepositoryToken(PhoneVerification),
+    );
+
+    repositoryUser = moduleRef.get(getRepositoryToken(User));
+
+    sessionRepository = moduleRef.get(getRepositoryToken(Session));
   });
 
   beforeEach(async () => {
     fakeFetch.mockReset();
-    await repository.delete({ phoneNumber: mockedNumber });
+    await repositoryPhoneVerification.delete({ phoneNumber: mockedNumber });
 
     fakeFetch.mockResolvedValue({
       json: () =>
@@ -61,7 +75,7 @@ describe('authService testing', () => {
     it('should create phone verification for new phone number', async () => {
       await service.sendCall(mockedNumber);
 
-      const row = await repository.findOneByOrFail({
+      const row = await repositoryPhoneVerification.findOneByOrFail({
         phoneNumber: mockedNumber,
       });
       expect(row?.phoneNumber).toBe(mockedNumber);
@@ -74,7 +88,7 @@ describe('authService testing', () => {
       const twoMin = 2 * 60 * 1000;
       const minExpiresAt = dateBeforeCall + twoMin;
       const maxExpiresAt = dateAfterCall + twoMin;
-      const row = await repository.findOneByOrFail({
+      const row = await repositoryPhoneVerification.findOneByOrFail({
         phoneNumber: mockedNumber,
       });
 
@@ -103,7 +117,7 @@ describe('authService testing', () => {
         expiresAt,
         consumedAt: null,
       };
-      await repository.insert(mockedValues);
+      await repositoryPhoneVerification.insert(mockedValues);
 
       const promise = service.sendCall(mockedNumber);
 
@@ -127,7 +141,7 @@ describe('authService testing', () => {
         expiresAt,
         consumedAt: null,
       };
-      await repository.insert(mockedValues);
+      await repositoryPhoneVerification.insert(mockedValues);
 
       const promise = service.sendCall(mockedNumber);
 
@@ -153,15 +167,15 @@ describe('authService testing', () => {
         expiresAt,
         consumedAt: expiresAt,
       };
-      await repository.insert(mockedValues);
+      await repositoryPhoneVerification.insert(mockedValues);
 
-      const rowBefore = await repository.findOneByOrFail({
+      const rowBefore = await repositoryPhoneVerification.findOneByOrFail({
         phoneNumber: mockedNumber,
       });
 
       const response = await service.sendCall(mockedNumber);
 
-      const rowAfter = await repository.findOneByOrFail({
+      const rowAfter = await repositoryPhoneVerification.findOneByOrFail({
         phoneNumber: mockedNumber,
       });
 
@@ -202,7 +216,7 @@ describe('authService testing', () => {
         message: ERROR_DEFINITIONS[ErrorCode.ServiceUnavailable].message,
       });
 
-      const exists = await repository.existsBy({
+      const exists = await repositoryPhoneVerification.existsBy({
         phoneNumber: mockedNumber,
       });
 
@@ -224,17 +238,78 @@ describe('authService testing', () => {
         code: ErrorCode.ServiceUnavailable,
         message: ERROR_DEFINITIONS[ErrorCode.ServiceUnavailable].message,
       });
-      const exist = await repository.existsBy({
+      const exist = await repositoryPhoneVerification.existsBy({
         phoneNumber: mockedNumber,
       });
       expect(exist).toBe(false);
     });
   });
 
+  describe('sendCode()', () => {
+    it('should create user and session for valid OTP', async () => {
+      const expiresAt = new Date(Date.now() + 2 * 60 * 1000);
+      const mockedValues: DeepPartial<PhoneVerification> = {
+        phoneNumber: mockedNumber,
+        failedAttempts: 0,
+        blockedUntil: null,
+        otpHash,
+        resendAvailableAt: expiresAt,
+        expiresAt,
+        consumedAt: null,
+      };
+      let userId;
+      let sessionId;
+      try {
+        await repositoryPhoneVerification.insert(mockedValues);
+        const dateBefore = Date.now();
+        await service.sendCode({ code: mockedCode, phoneNumber: mockedNumber });
+        const dateAfter = Date.now();
+
+        const user = await repositoryUser.findOneByOrFail({
+          phoneNumber: mockedNumber,
+        });
+
+        userId = user.id;
+
+        expect(user).toBeDefined();
+        expect(user.id).toBeDefined();
+        expect(user).toMatchObject({
+          phoneNumber: mockedNumber,
+          createdAt: expect.any(Date),
+        });
+        expect(user.createdAt.getTime()).toBeGreaterThanOrEqual(dateBefore);
+        expect(user.createdAt.getTime()).toBeLessThanOrEqual(dateAfter);
+
+        const session = await sessionRepository.findOneOrFail({
+          where: {
+            user: {
+              id: user.id,
+            },
+          },
+          relations: {
+            user: true,
+          },
+        });
+
+        sessionId = session.id;
+
+        expect(session.user.id).toBe(user.id);
+        // продолжить провеку сессии
+      } finally {
+        if (userId) {
+          await repositoryUser.delete(userId);
+        }
+        if (sessionId) {
+          await sessionRepository.delete(sessionId);
+        }
+      }
+    });
+  });
+
   afterEach(async () => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
-    await repository.delete({ phoneNumber: mockedNumber });
+    await repositoryPhoneVerification.delete({ phoneNumber: mockedNumber });
   });
 
   afterAll(async () => {

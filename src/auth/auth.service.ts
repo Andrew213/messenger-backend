@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { DeepPartial, Repository } from 'typeorm';
-import { DataSource } from 'typeorm/browser';
+import { DataSource, DeepPartial, Repository } from 'typeorm';
 
 import { SubmitCallResponseDto } from '@/auth/dto/submit-call.dto.js';
 import {
@@ -30,8 +29,8 @@ const { smsru } = appConfig();
 @Injectable()
 export class AuthService {
   constructor(
-    @InjectRepository(PhoneVerification)
     private readonly dataSource: DataSource,
+    @InjectRepository(PhoneVerification)
     private readonly PhoneVerificationRepository: Repository<PhoneVerification>,
     private readonly userService: UsersService,
     private readonly sessionService: SessionService,

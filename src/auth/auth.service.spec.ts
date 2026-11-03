@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 
 import { Test } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 
 import { AuthService } from '@/auth/auth.service.js';
 import { SubmitCodeDto } from '@/auth/dto/submit-code.dto.js';
@@ -12,6 +12,8 @@ import {
 } from '@/auth/errors/auth.errors.js';
 import { AppException } from '@/common/exceptions/app.exceptions.js';
 import appConfig from '@/config/app.config.js';
+import { SessionService } from '@/sessions/session.service.js';
+import { UsersService } from '@/users/users.service.js';
 
 const { smsru } = appConfig();
 
@@ -21,6 +23,19 @@ describe('AuthService unit tests', () => {
   const mockPhoneVerificationRepository = {
     findOne: vi.fn(),
     update: vi.fn(),
+  };
+
+  const mockManager = {
+    findOne: vi.fn(),
+    update: vi.fn(),
+  };
+
+  const mockDataSource = {
+    transaction: vi.fn(
+      async <T>(
+        callback: (manager: typeof mockManager) => Promise<T>,
+      ): Promise<T> => callback(mockManager),
+    ),
   };
 
   const mockedData: SubmitCodeDto = {
@@ -33,6 +48,24 @@ describe('AuthService unit tests', () => {
     const module = await Test.createTestingModule({
       providers: [
         AuthService,
+
+        {
+          provide: getDataSourceToken(),
+          useValue: mockDataSource,
+        },
+        {
+          provide: UsersService,
+          useValue: {
+            findByPhoneNumer: vi.fn(),
+            createUser: vi.fn(),
+          },
+        },
+        {
+          provide: SessionService,
+          useValue: {
+            createSession: vi.fn(),
+          },
+        },
         {
           provide: getRepositoryToken(PhoneVerification),
           useValue: mockPhoneVerificationRepository,
@@ -45,7 +78,7 @@ describe('AuthService unit tests', () => {
 
   describe('sendCode()', () => {
     it('should reject expired OTP', async () => {
-      mockPhoneVerificationRepository.findOne.mockResolvedValue({
+      mockManager.findOne.mockResolvedValue({
         otpHash: '1111',
         failedAttempts: 0,
         resendAvailableAt: null,
@@ -73,9 +106,7 @@ describe('AuthService unit tests', () => {
         consumedAt: null,
         blockedUntil: new Date(Date.now() + 2 * 60 * 1000),
       };
-      mockPhoneVerificationRepository.findOne.mockResolvedValue(
-        mockedVerification,
-      );
+      mockManager.findOne.mockResolvedValue(mockedVerification);
 
       const promise = service.sendCode(mockedData);
 
@@ -101,9 +132,7 @@ describe('AuthService unit tests', () => {
         blockedUntil: null,
       };
 
-      mockPhoneVerificationRepository.findOne.mockResolvedValue(
-        mockedVerification,
-      );
+      mockManager.findOne.mockResolvedValue(mockedVerification);
 
       const promise = service.sendCode(mockedData);
 
@@ -113,9 +142,8 @@ describe('AuthService unit tests', () => {
         message: AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpInvalid].message,
       });
 
-      expect(
-        mockPhoneVerificationRepository.update,
-      ).toHaveBeenCalledExactlyOnceWith(
+      expect(mockManager.update).toHaveBeenCalledExactlyOnceWith(
+        PhoneVerification,
         { phoneNumber: mockedData.phoneNumber },
         { failedAttempts: 1 },
       );
@@ -134,9 +162,7 @@ describe('AuthService unit tests', () => {
         blockedUntil: null,
       };
 
-      mockPhoneVerificationRepository.findOne.mockResolvedValue(
-        mockedVerification,
-      );
+      mockManager.findOne.mockResolvedValue(mockedVerification);
 
       const promise = service.sendCode(mockedData);
 
@@ -146,7 +172,8 @@ describe('AuthService unit tests', () => {
           AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpMaxFailedAttempt].message,
       });
 
-      expect(mockPhoneVerificationRepository.update).toHaveBeenCalledWith(
+      expect(mockManager.update).toHaveBeenCalledWith(
+        PhoneVerification,
         { phoneNumber: mockedData.phoneNumber },
         {
           failedAttempts: 3,
@@ -168,9 +195,7 @@ describe('AuthService unit tests', () => {
         blockedUntil: null,
       };
 
-      mockPhoneVerificationRepository.findOne.mockResolvedValue(
-        mockedVerification,
-      );
+      mockManager.findOne.mockResolvedValue(mockedVerification);
 
       const promise = service.sendCode(mockedData);
 
@@ -196,9 +221,7 @@ describe('AuthService unit tests', () => {
         blockedUntil: null,
       };
 
-      mockPhoneVerificationRepository.findOne.mockResolvedValue(
-        mockedVerification,
-      );
+      mockManager.findOne.mockResolvedValue(mockedVerification);
 
       await expect(service.sendCode(mockedData)).rejects.toMatchObject({
         code: AuthErrorCode.OtpExecuted,
@@ -209,7 +232,7 @@ describe('AuthService unit tests', () => {
     });
 
     it('should reject if phone number not found', async () => {
-      mockPhoneVerificationRepository.findOne.mockResolvedValue(null);
+      mockManager.findOne.mockResolvedValue(null);
 
       await expect(service.sendCode(mockedData)).rejects.toMatchObject({
         code: AuthErrorCode.PhoneNotFound,
