@@ -29,7 +29,7 @@ describe('authService testing', () => {
   let moduleRef: TestingModule;
   let repositoryPhoneVerification: Repository<PhoneVerification>;
   let repositoryUser: Repository<User>;
-  let sessionRepository: Repository<Session>;
+  let repositorySession: Repository<Session>;
   let service: AuthService;
   const fakeFetch = vi.fn();
 
@@ -52,7 +52,7 @@ describe('authService testing', () => {
 
     repositoryUser = moduleRef.get(getRepositoryToken(User));
 
-    sessionRepository = moduleRef.get(getRepositoryToken(Session));
+    repositorySession = moduleRef.get(getRepositoryToken(Session));
   });
 
   beforeEach(async () => {
@@ -258,11 +258,13 @@ describe('authService testing', () => {
         consumedAt: null,
       };
       let userId;
-      let sessionId;
       try {
         await repositoryPhoneVerification.insert(mockedValues);
         const dateBefore = Date.now();
-        await service.sendCode({ code: mockedCode, phoneNumber: mockedNumber });
+        const result = await service.sendCode({
+          code: mockedCode,
+          phoneNumber: mockedNumber,
+        });
         const dateAfter = Date.now();
 
         const user = await repositoryUser.findOneByOrFail({
@@ -272,7 +274,6 @@ describe('authService testing', () => {
         userId = user.id;
 
         expect(user).toBeDefined();
-        expect(user.id).toBeDefined();
         expect(user).toMatchObject({
           phoneNumber: mockedNumber,
           createdAt: expect.any(Date),
@@ -280,7 +281,7 @@ describe('authService testing', () => {
         expect(user.createdAt.getTime()).toBeGreaterThanOrEqual(dateBefore);
         expect(user.createdAt.getTime()).toBeLessThanOrEqual(dateAfter);
 
-        const session = await sessionRepository.findOneOrFail({
+        const session = await repositorySession.findOneOrFail({
           where: {
             user: {
               id: user.id,
@@ -291,18 +292,147 @@ describe('authService testing', () => {
           },
         });
 
-        sessionId = session.id;
-
+        expect(session).toBeDefined();
         expect(session.user.id).toBe(user.id);
-        // продолжить провеку сессии
+
+        expect(result).toMatchObject({
+          success: true,
+          data: {
+            expiresAt: session.expiresAt,
+            token: expect.any(String),
+            user: {
+              id: user.id,
+            },
+          },
+        });
       } finally {
         if (userId) {
           await repositoryUser.delete(userId);
         }
-        if (sessionId) {
-          await sessionRepository.delete(sessionId);
+      }
+    });
+
+    it('should create session for existing user with valid OTP', async () => {
+      const newUser = repositoryUser.create({ phoneNumber: mockedNumber });
+      const savedUSer = await repositoryUser.save(newUser);
+
+      const expiresAt = new Date(Date.now() + 2 * 60 * 1000);
+      const mockedValues: DeepPartial<PhoneVerification> = {
+        phoneNumber: mockedNumber,
+        failedAttempts: 0,
+        blockedUntil: null,
+        otpHash,
+        resendAvailableAt: expiresAt,
+        expiresAt,
+        consumedAt: null,
+      };
+
+      await repositoryPhoneVerification.insert(mockedValues);
+
+      try {
+        const result = await service.sendCode({
+          code: mockedCode,
+          phoneNumber: mockedNumber,
+        });
+        const users = await repositoryUser.findBy({
+          phoneNumber: mockedNumber,
+        });
+        expect(users).toHaveLength(1);
+        const session = await repositorySession.findOneOrFail({
+          where: { user: { id: savedUSer.id } },
+          relations: { user: true },
+        });
+
+        expect(session).toBeDefined();
+        expect(session.user.id).toBe(savedUSer.id);
+        expect(result).toMatchObject({
+          success: true,
+          data: {
+            expiresAt: session.expiresAt,
+            token: expect.any(String),
+            user: {
+              id: savedUSer.id,
+            },
+          },
+        });
+      } finally {
+        if (savedUSer.id) {
+          await repositoryUser.delete(savedUSer.id);
         }
       }
+    });
+
+    it('should mark OTP as consumed after succeful verification', async () => {
+      const expiresAt = new Date(Date.now() + 2 * 60 * 1000);
+      const mockedValues: DeepPartial<PhoneVerification> = {
+        phoneNumber: mockedNumber,
+        failedAttempts: 0,
+        blockedUntil: null,
+        otpHash,
+        resendAvailableAt: expiresAt,
+        expiresAt,
+        consumedAt: null,
+      };
+      let userId;
+      await repositoryPhoneVerification.insert(mockedValues);
+      try {
+        const dateBefore = Date.now();
+        await service.sendCode({ code: mockedCode, phoneNumber: mockedNumber });
+        const dateAfter = Date.now();
+        const phoneVereficationRow =
+          await repositoryPhoneVerification.findOneByOrFail({
+            phoneNumber: mockedNumber,
+          });
+
+        expect(phoneVereficationRow.consumedAt?.getTime()).greaterThanOrEqual(
+          dateBefore,
+        );
+        expect(phoneVereficationRow.consumedAt?.getTime()).lessThanOrEqual(
+          dateAfter,
+        );
+
+        const user = await repositoryUser.findOneByOrFail({
+          phoneNumber: mockedNumber,
+        });
+
+        userId = user.id;
+      } finally {
+        if (userId) {
+          await repositoryUser.delete(userId);
+        }
+      }
+    });
+
+    it('should save failedAttempts after incorrect OTP', async () => {
+      const expiresAt = new Date(Date.now() + 2 * 60 * 1000);
+      const mockedValues: DeepPartial<PhoneVerification> = {
+        phoneNumber: mockedNumber,
+        failedAttempts: 0,
+        blockedUntil: null,
+        otpHash,
+        resendAvailableAt: expiresAt,
+        expiresAt,
+        consumedAt: null,
+      };
+      await repositoryPhoneVerification.insert(mockedValues);
+
+      const promise = service.sendCode({
+        code: '9123',
+        phoneNumber: mockedNumber,
+      });
+
+      await expect(promise).rejects.toBeInstanceOf(AppException);
+      await expect(promise).rejects.toMatchObject({
+        code: AuthErrorCode.OtpInvalid,
+        message: AUTH_ERROR_DEFINITIONS[AuthErrorCode.OtpInvalid].message,
+      });
+
+      const phoneVereficationRow =
+        await repositoryPhoneVerification.findOneByOrFail({
+          phoneNumber: mockedNumber,
+        });
+
+      expect(phoneVereficationRow.failedAttempts).toBe(1);
     });
   });
 

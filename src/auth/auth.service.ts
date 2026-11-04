@@ -186,6 +186,7 @@ export class AuthService {
         const receivedBuffer = Buffer.from(receiveHmac, 'hex');
 
         if (
+          // OTP CHECKING
           expectedBuffer.length !== receivedBuffer.length ||
           !timingSafeEqual(expectedBuffer, receivedBuffer)
         ) {
