@@ -1,5 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import cookieParser from 'cookie-parser';
+import { NextFunction, Request } from 'express';
 
 import { AppException } from '@/common/exceptions/app.exceptions.js';
 import {
@@ -40,6 +42,11 @@ async function bootstrap() {
       },
     }),
   );
+  app.use((req: Request, _, next: NextFunction) => {
+    req.context = {};
+    next();
+  });
+  app.use(cookieParser());
 
   await app.listen(port ?? 3000);
 }

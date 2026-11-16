@@ -4,6 +4,7 @@ import parsePhoneNumberFromString from 'libphonenumber-js';
 @Injectable()
 export class PhoneNumberPipe implements PipeTransform<unknown, string> {
   transform(value: unknown): string {
+    console.log({ value });
     if (typeof value !== 'string') {
       throw new BadRequestException('Phone number should be a string');
     }

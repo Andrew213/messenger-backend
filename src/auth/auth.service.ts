@@ -265,4 +265,8 @@ export class AuthService {
     }
     return transaction;
   }
+
+  async logout(sessionId: string) {
+    return await this.sessionService.clearSession(sessionId);
+  }
 }

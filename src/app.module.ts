@@ -24,7 +24,6 @@ const {
       serviceId: 'messenger-backend',
     }),
     TypeOrmModule.forRoot(dataSourceOptions),
-
     UsersModule,
     AuthModule,
   ],

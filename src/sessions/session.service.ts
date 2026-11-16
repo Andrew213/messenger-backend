@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
 import { DeepPartial, EntityManager, Repository } from 'typeorm';
@@ -33,5 +37,33 @@ export class SessionService {
     const session = await repository.save(newSession);
 
     return { expiresAt, token: sessionToken, id: session.id };
+  }
+
+  async checkSession(tokenHash: string) {
+    const session = await this.SessionRepository.findOne({
+      where: { tokenHash },
+      relations: {
+        user: true,
+      },
+    });
+    if (session) {
+      const expirseAt = session.expiresAt.getTime();
+      const now = Date.now();
+      if (expirseAt > now) {
+        return { userId: session.user.id, sessionId: session.id };
+      }
+    }
+
+    throw new UnauthorizedException();
+  }
+
+  async clearSession(sessionId: string) {
+    const result = await this.SessionRepository.delete(sessionId);
+
+    if (result.affected === 0) {
+      throw new NotFoundException('Session not found');
+    }
+
+    return true;
   }
 }

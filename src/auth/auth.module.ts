@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from '@/auth/auth.controller.js';
 import { AuthService } from '@/auth/auth.service.js';
 import { PhoneVerification } from '@/auth/entities/phone-verification.entity.js';
+import { SessionGuard } from '@/sessions/guards/session.guard.js';
 import { SessionModule } from '@/sessions/session.module.js';
 import { UsersModule } from '@/users/users.module.js';
 
@@ -14,6 +15,6 @@ import { UsersModule } from '@/users/users.module.js';
     UsersModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [AuthService, SessionGuard],
 })
 export class AuthModule {}

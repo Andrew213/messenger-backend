@@ -3,9 +3,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { Session } from '@/sessions/entities/session.entity.js';
 import { SessionService } from '@/sessions/session.service.js';
-import { UsersModule } from '@/users/users.module.js';
 @Module({
-  imports: [TypeOrmModule.forFeature([Session]), UsersModule],
+  imports: [TypeOrmModule.forFeature([Session])],
   providers: [SessionService],
   exports: [SessionService],
 })

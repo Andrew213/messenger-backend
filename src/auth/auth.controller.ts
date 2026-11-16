@@ -5,15 +5,20 @@ import {
   HttpStatus,
   Logger,
   Post,
+  Req,
   Res,
+  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
+import type { Request } from 'express';
 
 import { AuthService } from '@/auth/auth.service.js';
 import { SubmitCallResponseDto } from '@/auth/dto/submit-call.dto.js';
 import { SubmitCodeDto } from '@/auth/dto/submit-code.dto.js';
 // import { SubmitCodeDto } from '@/auth/dto/submit-code.dto.js';
 import { PhoneNumberPipe } from '@/auth/pipes/phone-number.pipe.js';
+import { SessionGuard } from '@/sessions/guards/session.guard.js';
 import { AppSuccessResponse } from '@/types/app-response.types.js';
 
 @Controller('auth')
@@ -23,7 +28,6 @@ export class AuthController {
     private readonly adapterHost: HttpAdapterHost,
   ) {}
   private readonly logger = new Logger(AuthService.name);
-
   @Post('/call')
   submitCall(
     @Body('phoneNumber', PhoneNumberPipe) dto: string,
@@ -58,5 +62,21 @@ export class AuthController {
     } = response;
 
     return { ...restResponse, data: cleanData };
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(SessionGuard)
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: unknown) {
+    const sessionId = req.context.sessionId;
+
+    if (!sessionId) {
+      throw new UnauthorizedException();
+    }
+    const wasLogout = await this.AuthService.logout(sessionId);
+    if (wasLogout) {
+      await this.adapterHost.httpAdapter.clearCookie(res, 'token');
+    }
+    return;
   }
 }

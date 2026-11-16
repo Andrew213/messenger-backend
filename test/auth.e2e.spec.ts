@@ -1,7 +1,9 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { createHmac, timingSafeEqual } from 'crypto';
+import cookieParser from 'cookie-parser';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
+import { NextFunction, Request } from 'express';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { DeepPartial, Repository } from 'typeorm';
@@ -9,6 +11,7 @@ import { DeepPartial, Repository } from 'typeorm';
 import { AuthModule } from '@/auth/auth.module.js';
 import { PhoneVerification } from '@/auth/entities/phone-verification.entity.js';
 import appConfig from '@/config/app.config.js';
+import { SessionService } from '@/sessions/session.service.js';
 import { User } from '@/users/entities/user.entity.js';
 
 import { TestDB } from './config/typeorm-test.config.js';
@@ -17,13 +20,17 @@ const { smsru } = appConfig();
 
 describe('Auth e2e test', () => {
   let app: INestApplication<App>;
+
   const mockedCode = '1234';
   const mockedNumber = '+79999999993';
+
   const otpHash = createHmac('sha256', smsru.otpSecret)
     .update(`${mockedNumber}:${mockedCode}`)
     .digest('hex');
+
   let repositoryPhoneVerification: Repository<PhoneVerification>;
   let repositoryUser: Repository<User>;
+  let serviceSession: SessionService;
 
   const fakeFetch = vi.fn();
 
@@ -55,6 +62,13 @@ describe('Auth e2e test', () => {
     );
 
     repositoryUser = refModule.get(getRepositoryToken(User));
+    serviceSession = refModule.get(SessionService);
+
+    app.use((req: Request, _, next: NextFunction) => {
+      req.context = {};
+      next();
+    });
+    app.use(cookieParser());
 
     await app.init();
   });
@@ -114,6 +128,29 @@ describe('Auth e2e test', () => {
     expect(token).toContain('Secure');
     expect(token).toContain('SameSite=Strict');
     expect(response.body).not.toHaveProperty(['data', 'token']);
+  });
+
+  it('POST /auth/logout should  return 204, clear cookie and delete active session', async () => {
+    const user = await repositoryUser.insert({
+      phoneNumber: mockedNumber,
+    });
+    const session = await serviceSession.createSession(
+      user.generatedMaps[0].id,
+    );
+
+    const tokenHash = createHash('sha256').update(session.token).digest('hex');
+
+    const response = await request(app.getHttpServer())
+      .post('/auth/logout')
+      .set('Cookie', `token=${encodeURIComponent(session.token)}`)
+      .expect(204);
+
+    const cookies = response.headers['set-cookie'] as unknown as string[];
+    const tokenCookie = cookies.find((el) => el.startsWith('token='));
+    expect(tokenCookie).toBeDefined();
+    expect(tokenCookie).toMatch(/^token=;/);
+    const promise = serviceSession.checkSession(tokenHash);
+    await expect(promise).rejects.toThrow(new UnauthorizedException());
   });
 
   afterEach(async () => {
